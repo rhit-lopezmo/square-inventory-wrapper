@@ -2,11 +2,11 @@
   {
     "id": "p1",
     "name": "Vanilla Latte",
-    "description": "Espresso with steamed milk and vanilla syrup.",
+    "description": "A classic coffee drink.",
     "sku": "LAT-VAN-001",
-    "currentStock": 45,
+    "currentStock": 51,
     "imageUrl": "https://picsum.photos/400/400?random=1",
-    "category": "Beverage"
+    "category": "Drink"
   },
   {
     "id": "p2",
