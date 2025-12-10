@@ -17,9 +17,10 @@ var log = utils.NewLogger("CONFIG")
 func Load() {
 	log.Println("Loading config...")
 
-	dotenvErr := godotenv.Load()
-	if dotenvErr != nil {
-		log.Fatalln("ERROR: Could not load env file.")
+	if err := godotenv.Load(); err == nil {
+		log.Println(".env loaded")
+	} else {
+		log.Println("No local .env file, using real environment variables")
 	}
 
 	Port = os.Getenv("PORT")
