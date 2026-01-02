@@ -8,8 +8,11 @@ import (
 )
 
 var (
-	Port           string
-	AllowedOrigins []string
+	Port              string
+	AllowedOrigins    []string
+	SquareAccessToken string
+	SquareEnv         string
+	SquareLocationID  string
 )
 
 var log = utils.NewLogger("CONFIG")
@@ -31,5 +34,20 @@ func Load() {
 	AllowedOrigins = strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
 	if AllowedOrigins[0] == "" {
 		log.Fatalln("ERROR: Could not find 'ALLOWED_ORIGINS' in env file.")
+	}
+
+	SquareAccessToken = os.Getenv("SQUARE_ACCESS_TOKEN")
+	if SquareAccessToken == "" {
+		log.Fatalln("ERROR: Could not find 'SQUARE_ACCESS_TOKEN' in env file.")
+	}
+
+	SquareEnv = os.Getenv("SQUARE_ENV")
+	if SquareEnv == "" {
+		log.Fatalln("ERROR: Could not find 'SQUARE_ENV' in env file.")
+	}
+
+	SquareLocationID = os.Getenv("SQUARE_LOCATION_ID")
+	if SquareLocationID == "" {
+		log.Fatalln("ERROR: Could not find 'SQUARE_LOCATION_ID' in env file.")
 	}
 }
