@@ -12,7 +12,7 @@ var log = utils.NewLogger("SQUARE-CLIENT")
 
 var SquareClient *client.Client
 
-func InitClient(accessToken, env string) {
+func Init(accessToken, env string) {
 	if SquareClient != nil {
 		log.Println("WARNING: Square client already initialized, exiting from InitClient...")
 		return
@@ -28,10 +28,10 @@ func InitClient(accessToken, env string) {
 		log.Fatalln("ERROR: Invalid Square environment, exiting from InitClient...")
 	}
 
-	log.Printf("Initializing Square client with %s environment...", env)
-
 	SquareClient = client.NewClient(
 		option.WithToken(accessToken),
 		option.WithBaseURL(envUrl),
 	)
+
+	log.Printf("Initialized Square client in %s environment", env)
 }

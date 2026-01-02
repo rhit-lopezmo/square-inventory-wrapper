@@ -3,6 +3,7 @@ package main
 import (
 	"aoa-inventory/api"
 	"aoa-inventory/config"
+	squareClient "aoa-inventory/squareUtils/client"
 	"aoa-inventory/utils"
 	"net/http"
 	"time"
@@ -19,6 +20,9 @@ func main() {
 
 	// setup gin
 	gin.SetMode(gin.ReleaseMode)
+
+	// setup square client
+	squareClient.Init(config.SquareAccessToken, config.SquareEnv)
 
 	// setup healthcheck route before setting cors
 	ginEngine := gin.Default()
