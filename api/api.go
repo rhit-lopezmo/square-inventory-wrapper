@@ -42,7 +42,7 @@ func UpdateInventoryItem(ctx *gin.Context) {
 		return
 	}
 
-	savedItem, err := squareUtils.UpdateInventoryItem("data.json", sku, &updatePayload)
+	savedItem, err := squareUtils.UpdateInventoryItem("", sku, &updatePayload)
 	if err != nil {
 		if errors.Is(err, squareUtils.ErrInventoryItemNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
