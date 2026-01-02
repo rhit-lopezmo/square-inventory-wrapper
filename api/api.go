@@ -21,9 +21,10 @@ func SetupEndpoints(apiGroup *gin.RouterGroup) {
 func GetInventory(ctx *gin.Context) {
 	log.Println("Getting inventory...")
 
-	sampleInventory := squareUtils.LoadSampleInventory("data.json")
+	// inventory := squareUtils.LoadSampleInventory("data.json")
+	inventory := squareUtils.LoadInventory()
 
-	ctx.JSON(http.StatusOK, sampleInventory)
+	ctx.JSON(http.StatusOK, inventory)
 }
 
 func UpdateInventoryItem(ctx *gin.Context) {

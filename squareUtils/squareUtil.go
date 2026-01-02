@@ -1,11 +1,18 @@
 package squareUtils
 
 import (
+	"aoa-inventory/config"
+	"aoa-inventory/squareUtils/client"
 	"aoa-inventory/squareUtils/models"
 	"aoa-inventory/utils"
+	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
+	"strconv"
+
+	square "github.com/square/square-go-sdk"
 )
 
 var log = utils.NewLogger("SQUARE-UTILS")
@@ -19,11 +26,186 @@ func LoadSampleInventory(path string) []models.InventoryItem {
 		return []models.InventoryItem{}
 	}
 
-	var items []models.InventoryItem
+	items := []models.InventoryItem{}
 	if err := json.Unmarshal(data, &items); err != nil {
 		log.Printf("Could not parse %s: %v", path, err)
 		return []models.InventoryItem{}
 	}
+
+	return items
+}
+
+func LoadInventory() []models.InventoryItem {
+	sqClient := client.SquareClient
+
+	if sqClient == nil {
+		log.Println("ERROR: Square client is not initialized")
+		return []models.InventoryItem{}
+	}
+
+	ctx := context.Background()
+	items := []models.InventoryItem{}
+
+	countReq := &square.BatchGetInventoryCountsRequest{
+		LocationIDs: []string{config.SquareLocationID},
+		States:      []square.InventoryState{square.InventoryStateInStock},
+	}
+
+	countResp, err := sqClient.Inventory.BatchGetCounts(ctx, countReq)
+	if err != nil {
+		log.Printf("ERROR: Failed to fetch inventory from Square: %v", err)
+		return []models.InventoryItem{}
+	}
+
+	variationCounts := map[string]int{}
+
+	for _, count := range countResp.Counts {
+		if count == nil || count.CatalogObjectID == nil || count.Quantity == nil {
+			continue
+		}
+
+		qty, err := strconv.ParseFloat(*count.Quantity, 64)
+		if err != nil {
+			log.Printf("ERROR: Could not parse quantity for catalog object %s: %v", *count.CatalogObjectID, err)
+			continue
+		}
+
+		variationCounts[*count.CatalogObjectID] = int(math.Round(qty))
+	}
+
+	// Fetch catalog metadata to enrich counts with names/descriptions/SKUs/categories/images.
+	listReq := &square.ListCatalogRequest{
+		Types: square.String("ITEM,ITEM_VARIATION,IMAGE,CATEGORY"),
+	}
+
+	catalogPage, err := sqClient.Catalog.List(ctx, listReq)
+	if err != nil {
+		log.Printf("ERROR: Failed to fetch catalog items from Square: %v", err)
+		return []models.InventoryItem{}
+	}
+
+	type itemMeta struct {
+		name         string
+		desc         string
+		categoryID   string
+		categoryName string
+		imageIDs     []string
+	}
+
+	type variationMeta struct {
+		itemID        string
+		variationName string
+		sku           string
+		imageID       string
+	}
+
+	imageURLs := map[string]string{}
+	categoryNames := map[string]string{}
+	itemsMeta := map[string]itemMeta{}
+	variationDetails := map[string]variationMeta{}
+
+	// Build maps from the catalog objects we received.
+	for _, obj := range catalogPage.Results {
+		if obj == nil {
+			continue
+		}
+
+		switch obj.GetType() {
+		case "IMAGE":
+			if obj.Image != nil && obj.Image.ImageData != nil && obj.Image.ImageData.URL != nil {
+				imageURLs[obj.Image.ID] = *obj.Image.ImageData.URL
+			}
+		case "CATEGORY":
+			if obj.Category != nil && obj.Category.CategoryData != nil && obj.Category.CategoryData.Name != nil && obj.Category.ID != nil {
+				categoryNames[*obj.Category.ID] = *obj.Category.CategoryData.Name
+			}
+		case "ITEM":
+			if obj.Item != nil && obj.Item.ItemData != nil {
+				itemData := obj.Item.ItemData
+				meta := itemMeta{}
+				if itemData.Name != nil {
+					meta.name = *itemData.Name
+				}
+				if itemData.Description != nil {
+					meta.desc = *itemData.Description
+				}
+				if itemData.CategoryID != nil {
+					meta.categoryID = *itemData.CategoryID
+				} else if len(itemData.Categories) > 0 && itemData.Categories[0] != nil && itemData.Categories[0].CategoryData != nil && itemData.Categories[0].CategoryData.Name != nil {
+					if name := itemData.Categories[0].CategoryData.GetName(); name != nil {
+						meta.categoryName = *name
+					}
+				}
+				if len(itemData.ImageIDs) > 0 {
+					meta.imageIDs = itemData.ImageIDs
+				}
+				itemsMeta[obj.Item.ID] = meta
+			}
+		case "ITEM_VARIATION":
+			if obj.ItemVariation != nil && obj.ItemVariation.ItemVariationData != nil {
+				vData := obj.ItemVariation.ItemVariationData
+				meta := variationMeta{}
+				if vData.ItemID != nil {
+					meta.itemID = *vData.ItemID
+				}
+				if vData.Name != nil {
+					meta.variationName = *vData.Name
+				}
+				if vData.Sku != nil && *vData.Sku != "" {
+					meta.sku = *vData.Sku
+				} else {
+					meta.sku = obj.ItemVariation.ID
+				}
+				if obj.ItemVariation.ImageID != nil {
+					meta.imageID = *obj.ItemVariation.ImageID
+				}
+				variationDetails[obj.ItemVariation.ID] = meta
+			}
+		}
+	}
+
+	for variationID, stock := range variationCounts {
+		meta := variationDetails[variationID]
+		parent := itemsMeta[meta.itemID]
+
+		name := parent.name
+		if name == "" {
+			name = meta.variationName
+		}
+		if name == "" {
+			name = variationID
+		}
+
+		// Prefer variation image, then item image list.
+		imageURL := ""
+		if meta.imageID != "" {
+			imageURL = imageURLs[meta.imageID]
+		}
+		if imageURL == "" && len(parent.imageIDs) > 0 {
+			if url, ok := imageURLs[parent.imageIDs[0]]; ok {
+				imageURL = url
+			}
+		}
+
+		categoryName := ""
+		if parent.categoryID != "" {
+			categoryName = categoryNames[parent.categoryID]
+		} else if parent.categoryName != "" {
+			categoryName = parent.categoryName
+		}
+
+		items = append(items, models.InventoryItem{
+			ID:           variationID,
+			Name:         name,
+			Description:  parent.desc,
+			SKU:          meta.sku,
+			CurrentStock: stock,
+			ImageURL:     imageURL,
+			Category:     categoryName,
+		})
+	}
+
+	log.Printf("Loaded %d inventory items from Square", len(items))
 
 	return items
 }
