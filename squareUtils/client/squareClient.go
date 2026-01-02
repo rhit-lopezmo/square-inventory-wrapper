@@ -14,7 +14,7 @@ var SquareClient *client.Client
 
 func Init(accessToken, env string) {
 	if SquareClient != nil {
-		log.Println("WARNING: Square client already initialized, exiting from InitClient...")
+		log.Println("WARNING: Square client already initialized, skipping...")
 		return
 	}
 
@@ -25,7 +25,7 @@ func Init(accessToken, env string) {
 	case "sandbox":
 		envUrl = square.Environments.Sandbox
 	default:
-		log.Fatalln("ERROR: Invalid Square environment, exiting from InitClient...")
+		log.Fatalln("ERROR: Invalid Square environment, exiting...")
 	}
 
 	SquareClient = client.NewClient(
