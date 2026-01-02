@@ -87,11 +87,13 @@ func LoadInventory() []models.InventoryItem {
 	}
 
 	type itemMeta struct {
-		name         string
-		desc         string
-		categoryID   string
-		categoryName string
-		imageIDs     []string
+		name                  string
+		desc                  string
+		categoryID            string
+		categoryName          string
+		reportingCategoryID   string
+		reportingCategoryName string
+		imageIDs              []string
 	}
 
 	type variationMeta struct {
@@ -136,6 +138,18 @@ func LoadInventory() []models.InventoryItem {
 				} else if len(itemData.Categories) > 0 && itemData.Categories[0] != nil && itemData.Categories[0].CategoryData != nil && itemData.Categories[0].CategoryData.Name != nil {
 					if name := itemData.Categories[0].CategoryData.GetName(); name != nil {
 						meta.categoryName = *name
+					}
+				}
+				if itemData.ReportingCategory != nil {
+					if itemData.ReportingCategory.ID != nil {
+						meta.reportingCategoryID = *itemData.ReportingCategory.ID
+					}
+					if itemData.ReportingCategory.CategoryData != nil && itemData.ReportingCategory.CategoryData.Name != nil {
+						meta.reportingCategoryName = *itemData.ReportingCategory.CategoryData.Name
+					} else if extra := itemData.ReportingCategory.GetExtraProperties(); extra != nil {
+						if name, ok := extra["name"].(string); ok {
+							meta.reportingCategoryName = name
+						}
 					}
 				}
 				if len(itemData.ImageIDs) > 0 {
@@ -196,14 +210,28 @@ func LoadInventory() []models.InventoryItem {
 			categoryName = parent.categoryName
 		}
 
+		reportingCategory := parent.reportingCategoryName
+		if reportingCategory == "" && parent.reportingCategoryID != "" {
+			reportingCategory = categoryNames[parent.reportingCategoryID]
+			if reportingCategory == "" {
+				reportingCategory = parent.reportingCategoryID
+			}
+		}
+
+		displayCategory := categoryName
+		if displayCategory == "" {
+			displayCategory = reportingCategory
+		}
+
 		items = append(items, models.InventoryItem{
-			ID:           variationID,
-			Name:         name,
-			Description:  parent.desc,
-			SKU:          meta.sku,
-			CurrentStock: stock,
-			ImageURL:     imageURL,
-			Category:     categoryName,
+			ID:                variationID,
+			Name:              name,
+			Description:       parent.desc,
+			SKU:               meta.sku,
+			CurrentStock:      stock,
+			ImageURL:          imageURL,
+			Category:          displayCategory,
+			ReportingCategory: reportingCategory,
 		})
 	}
 
@@ -289,11 +317,13 @@ func UpdateInventoryItem(path string, sku string, update *models.InventoryItemUp
 	}
 
 	type itemMeta struct {
-		name         string
-		desc         string
-		categoryID   string
-		categoryName string
-		imageIDs     []string
+		name                  string
+		desc                  string
+		categoryID            string
+		categoryName          string
+		reportingCategoryID   string
+		reportingCategoryName string
+		imageIDs              []string
 	}
 
 	type variationMeta struct {
@@ -337,6 +367,18 @@ func UpdateInventoryItem(path string, sku string, update *models.InventoryItemUp
 				} else if len(itemData.Categories) > 0 && itemData.Categories[0] != nil && itemData.Categories[0].CategoryData != nil && itemData.Categories[0].CategoryData.Name != nil {
 					if name := itemData.Categories[0].CategoryData.GetName(); name != nil {
 						meta.categoryName = *name
+					}
+				}
+				if itemData.ReportingCategory != nil {
+					if itemData.ReportingCategory.ID != nil {
+						meta.reportingCategoryID = *itemData.ReportingCategory.ID
+					}
+					if itemData.ReportingCategory.CategoryData != nil && itemData.ReportingCategory.CategoryData.Name != nil {
+						meta.reportingCategoryName = *itemData.ReportingCategory.CategoryData.Name
+					} else if extra := itemData.ReportingCategory.GetExtraProperties(); extra != nil {
+						if name, ok := extra["name"].(string); ok {
+							meta.reportingCategoryName = name
+						}
 					}
 				}
 				if len(itemData.ImageIDs) > 0 {
@@ -433,14 +475,28 @@ func UpdateInventoryItem(path string, sku string, update *models.InventoryItemUp
 			categoryName = parent.categoryName
 		}
 
+		reportingCategory := parent.reportingCategoryName
+		if reportingCategory == "" && parent.reportingCategoryID != "" {
+			reportingCategory = categoryNames[parent.reportingCategoryID]
+			if reportingCategory == "" {
+				reportingCategory = parent.reportingCategoryID
+			}
+		}
+
+		displayCategory := categoryName
+		if displayCategory == "" {
+			displayCategory = reportingCategory
+		}
+
 		return &models.InventoryItem{
-			ID:           targetVariationID,
-			Name:         name,
-			Description:  parent.desc,
-			SKU:          meta.sku,
-			CurrentStock: currentQty,
-			ImageURL:     imageURL,
-			Category:     categoryName,
+			ID:                targetVariationID,
+			Name:              name,
+			Description:       parent.desc,
+			SKU:               meta.sku,
+			CurrentStock:      currentQty,
+			ImageURL:          imageURL,
+			Category:          displayCategory,
+			ReportingCategory: reportingCategory,
 		}, nil
 	}
 
@@ -507,13 +563,27 @@ func UpdateInventoryItem(path string, sku string, update *models.InventoryItemUp
 		categoryName = parent.categoryName
 	}
 
+	reportingCategory := parent.reportingCategoryName
+	if reportingCategory == "" && parent.reportingCategoryID != "" {
+		reportingCategory = categoryNames[parent.reportingCategoryID]
+		if reportingCategory == "" {
+			reportingCategory = parent.reportingCategoryID
+		}
+	}
+
+	displayCategory := categoryName
+	if displayCategory == "" {
+		displayCategory = reportingCategory
+	}
+
 	return &models.InventoryItem{
-		ID:           targetVariationID,
-		Name:         name,
-		Description:  parent.desc,
-		SKU:          meta.sku,
-		CurrentStock: newQty,
-		ImageURL:     imageURL,
-		Category:     categoryName,
+		ID:                targetVariationID,
+		Name:              name,
+		Description:       parent.desc,
+		SKU:               meta.sku,
+		CurrentStock:      newQty,
+		ImageURL:          imageURL,
+		Category:          displayCategory,
+		ReportingCategory: reportingCategory,
 	}, nil
 }
