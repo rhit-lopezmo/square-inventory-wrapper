@@ -15,11 +15,93 @@ import (
 
 	"github.com/google/uuid"
 	square "github.com/square/square-go-sdk"
+	"github.com/square/square-go-sdk/core"
 )
 
 var log = utils.NewLogger("SQUARE-UTILS")
 
 var ErrInventoryItemNotFound = errors.New("inventory item not found")
+
+func fetchAllInventoryCounts(ctx context.Context) (map[string]int, error) {
+	sqClient := client.SquareClient
+	if sqClient == nil {
+		return nil, errors.New("square client is not initialized")
+	}
+
+	variationCounts := map[string]int{}
+	cursor := ""
+
+	for {
+		countReq := &square.BatchGetInventoryCountsRequest{
+			LocationIDs: []string{config.SquareLocationID},
+			States:      []square.InventoryState{square.InventoryStateInStock},
+		}
+
+		if cursor != "" {
+			countReq.Cursor = square.String(cursor)
+		}
+
+		countResp, err := sqClient.Inventory.BatchGetCounts(ctx, countReq)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, count := range countResp.Counts {
+			if count == nil || count.CatalogObjectID == nil || count.Quantity == nil {
+				continue
+			}
+
+			qty, err := strconv.ParseFloat(*count.Quantity, 64)
+			if err != nil {
+				log.Printf("ERROR: Could not parse quantity for catalog object %s: %v", *count.CatalogObjectID, err)
+				continue
+			}
+
+			variationCounts[*count.CatalogObjectID] = int(math.Round(qty))
+		}
+
+		if countResp.Cursor == nil || *countResp.Cursor == "" {
+			break
+		}
+
+		cursor = *countResp.Cursor
+	}
+
+	return variationCounts, nil
+}
+
+func fetchAllCatalogObjects(ctx context.Context) ([]*square.CatalogObject, error) {
+	sqClient := client.SquareClient
+	if sqClient == nil {
+		return nil, errors.New("square client is not initialized")
+	}
+
+	catalogObjects := []*square.CatalogObject{}
+
+	listReq := &square.ListCatalogRequest{
+		Types: square.String("ITEM,ITEM_VARIATION,IMAGE,CATEGORY"),
+	}
+
+	page, err := sqClient.Catalog.List(ctx, listReq)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		catalogObjects = append(catalogObjects, page.Results...)
+
+		page, err = page.GetNextPage(ctx)
+		if errors.Is(err, core.ErrNoPages) {
+			return catalogObjects, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if page == nil {
+			return catalogObjects, nil
+		}
+	}
+}
 
 func LoadSampleInventory(path string) []models.InventoryItem {
 	data, err := os.ReadFile(path)
@@ -38,9 +120,7 @@ func LoadSampleInventory(path string) []models.InventoryItem {
 }
 
 func LoadInventory() []models.InventoryItem {
-	sqClient := client.SquareClient
-
-	if sqClient == nil {
+	if client.SquareClient == nil {
 		log.Println("ERROR: Square client is not initialized")
 		return []models.InventoryItem{}
 	}
@@ -48,39 +128,13 @@ func LoadInventory() []models.InventoryItem {
 	ctx := context.Background()
 	items := []models.InventoryItem{}
 
-	countReq := &square.BatchGetInventoryCountsRequest{
-		LocationIDs: []string{config.SquareLocationID},
-		States:      []square.InventoryState{square.InventoryStateInStock},
-	}
-
-	countResp, err := sqClient.Inventory.BatchGetCounts(ctx, countReq)
+	variationCounts, err := fetchAllInventoryCounts(ctx)
 	if err != nil {
 		log.Printf("ERROR: Failed to fetch inventory from Square: %v", err)
 		return []models.InventoryItem{}
 	}
 
-	variationCounts := map[string]int{}
-
-	for _, count := range countResp.Counts {
-		if count == nil || count.CatalogObjectID == nil || count.Quantity == nil {
-			continue
-		}
-
-		qty, err := strconv.ParseFloat(*count.Quantity, 64)
-		if err != nil {
-			log.Printf("ERROR: Could not parse quantity for catalog object %s: %v", *count.CatalogObjectID, err)
-			continue
-		}
-
-		variationCounts[*count.CatalogObjectID] = int(math.Round(qty))
-	}
-
-	// Fetch catalog metadata to enrich counts with names/descriptions/SKUs/categories/images.
-	listReq := &square.ListCatalogRequest{
-		Types: square.String("ITEM,ITEM_VARIATION,IMAGE,CATEGORY"),
-	}
-
-	catalogPage, err := sqClient.Catalog.List(ctx, listReq)
+	catalogObjects, err := fetchAllCatalogObjects(ctx)
 	if err != nil {
 		log.Printf("ERROR: Failed to fetch catalog items from Square: %v", err)
 		return []models.InventoryItem{}
@@ -109,7 +163,7 @@ func LoadInventory() []models.InventoryItem {
 	variationDetails := map[string]variationMeta{}
 
 	// Build maps from the catalog objects we received.
-	for _, obj := range catalogPage.Results {
+	for _, obj := range catalogObjects {
 		if obj == nil {
 			continue
 		}
@@ -307,11 +361,7 @@ func UpdateInventoryItem(path string, sku string, update *models.InventoryItemUp
 	ctx := context.Background()
 
 	// Fetch catalog to map SKU -> variation and enrich response.
-	listReq := &square.ListCatalogRequest{
-		Types: square.String("ITEM,ITEM_VARIATION,IMAGE,CATEGORY"),
-	}
-
-	catalogPage, err := sqClient.Catalog.List(ctx, listReq)
+	catalogObjects, err := fetchAllCatalogObjects(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +388,7 @@ func UpdateInventoryItem(path string, sku string, update *models.InventoryItemUp
 	itemsMeta := map[string]itemMeta{}
 	variationDetails := map[string]variationMeta{}
 
-	for _, obj := range catalogPage.Results {
+	for _, obj := range catalogObjects {
 		if obj == nil {
 			continue
 		}
